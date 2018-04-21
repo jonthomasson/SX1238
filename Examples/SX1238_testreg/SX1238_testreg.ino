@@ -131,6 +131,30 @@ void setup() {
   //REG_TEMP
   Serial.print("REG_TEMP: ");
   Serial.println(readRegister(REG_TEMP), HEX);
+
+  //REG_FORMERTEMP
+  Serial.print("REG_FORMERTEMP: ");
+  Serial.println(readRegister(REG_FORMERTEMP), HEX);
+
+  //REG_NODEADRS
+  Serial.print("REG_NODEADRS: ");
+  Serial.println(readRegister(REG_NODEADRS));
+
+  Serial.println("writing new node address...24");
+
+  writeRegister(REG_NODEADRS, 24);
+
+  //REG_NODEADRS
+  Serial.print("REG_NODEADRS: ");
+  Serial.println(readRegister(REG_NODEADRS));
+
+  Serial.println("resetting node address to 0");
+
+  writeRegister(REG_NODEADRS, 0);
+
+  //REG_NODEADRS
+  Serial.print("REG_NODEADRS: ");
+  Serial.println(readRegister(REG_NODEADRS));
 }
 
 //reads the register value of supplied address
