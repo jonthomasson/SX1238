@@ -84,6 +84,14 @@
 #define TX_EN             11
 #define RX_EN             12
 #define MODE              13
+#define MAX_DATA_LEN      61   //may not need later
+#define TX_LIMIT_MS       1000 //may not need later
+#define ADDRESS           10   //may not need later
+#define DIO0_INTERRUPT    14
+
+// TWS: define CTLbyte bits
+#define CTL_SENDACK   0x80     //may not need later
+#define CTL_REQACK    0x40     //may not need later
 
 // RegIrqFlags1
 #define RF_IRQFLAGS1_MODEREADY            0x80
@@ -94,6 +102,28 @@
 #define RF_IRQFLAGS1_TIMEOUT              0x04
 #define RF_IRQFLAGS1_PREAMBLEDETECT       0x02
 #define RF_IRQFLAGS1_SYNCADDRESSMATCH     0x01
+
+// RegDioMapping1
+#define RF_DIOMAPPING1_DIO0_00            0x00  // Default
+#define RF_DIOMAPPING1_DIO0_01            0x40
+#define RF_DIOMAPPING1_DIO0_10            0x80
+#define RF_DIOMAPPING1_DIO0_11            0xC0
+
+#define RF_DIOMAPPING1_DIO1_00            0x00  // Default
+#define RF_DIOMAPPING1_DIO1_01            0x10
+#define RF_DIOMAPPING1_DIO1_10            0x20
+#define RF_DIOMAPPING1_DIO1_11            0x30
+
+#define RF_DIOMAPPING1_DIO2_00            0x00  // Default
+#define RF_DIOMAPPING1_DIO2_01            0x04
+#define RF_DIOMAPPING1_DIO2_10            0x08
+#define RF_DIOMAPPING1_DIO2_11            0x0C
+
+#define RF_DIOMAPPING1_DIO3_00            0x00  // Default
+#define RF_DIOMAPPING1_DIO3_01            0x01
+#define RF_DIOMAPPING1_DIO3_10            0x02
+#define RF_DIOMAPPING1_DIO3_11            0x03
+
 
 //transceiver modes
 #define SX1238_MODE_SLEEP         0 //none
@@ -212,23 +242,23 @@ void transmitSomething(){
 void sendFrame(uint8_t toAddress, const void* buffer, uint8_t bufferSize, bool requestACK, bool sendACK)
 {
   setMode(SX1238_MODE_STANDBY); // turn off receiver to prevent reception while filling fifo
-  while ((readReg(REG_IRQFLAGS1) & RF_IRQFLAGS1_MODEREADY) == 0x00); // wait for ModeReady
-  writeReg(REG_DIOMAPPING1, RF_DIOMAPPING1_DIO0_00); // DIO0 is "Packet Sent"
-  if (bufferSize > RF69_MAX_DATA_LEN) bufferSize = RF69_MAX_DATA_LEN;
+  while ((readRegister(REG_IRQFLAGS1) & RF_IRQFLAGS1_MODEREADY) == 0x00); // wait for ModeReady
+  writeRegister(REG_DIOMAPPING1, RF_DIOMAPPING1_DIO0_00); // DIO0 is "Packet Sent"
+  if (bufferSize > MAX_DATA_LEN) bufferSize = MAX_DATA_LEN;
 
-  // control byte
+  // control byte. Note: we may not need this part.
   uint8_t CTLbyte = 0x00;
   if (sendACK)
-    CTLbyte = RFM69_CTL_SENDACK;
+    CTLbyte = CTL_SENDACK;
   else if (requestACK)
-    CTLbyte = RFM69_CTL_REQACK;
+    CTLbyte = CTL_REQACK;
 
   // write to FIFO
   select();
   SPI.transfer(REG_FIFO | 0x80);
   SPI.transfer(bufferSize + 3);
   SPI.transfer(toAddress);
-  SPI.transfer(_address);
+  SPI.transfer(ADDRESS);
   SPI.transfer(CTLbyte);
 
   for (uint8_t i = 0; i < bufferSize; i++)
@@ -236,11 +266,11 @@ void sendFrame(uint8_t toAddress, const void* buffer, uint8_t bufferSize, bool r
   unselect();
 
   // no need to wait for transmit mode to be ready since its handled by the radio
-  setMode(RF69_MODE_TX);
+  setMode(SX1238_MODE_TX);
   uint32_t txStart = millis();
-  while (digitalRead(_interruptPin) == 0 && millis() - txStart < RF69_TX_LIMIT_MS); // wait for DIO0 to turn HIGH signalling transmission finish
-  //while (readReg(REG_IRQFLAGS2) & RF_IRQFLAGS2_PACKETSENT == 0x00); // wait for ModeReady
-  setMode(RF69_MODE_STANDBY);
+  while (digitalRead(DIO0_INTERRUPT) == 0 && millis() - txStart < TX_LIMIT_MS); // wait for DIO0 to turn HIGH signalling transmission finish
+  
+  setMode(SX1238_MODE_STANDBY);
 }
 
 
