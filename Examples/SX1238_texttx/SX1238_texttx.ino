@@ -81,13 +81,13 @@
 
 #define SERIAL_BAUD       115200
 #define SS                10
-#define TX_EN             11
-#define RX_EN             12
-#define MODE              13
+#define TX_EN             7
+#define RX_EN             9
+#define MODE              6
 #define MAX_DATA_LEN      61   //may not need later
 #define TX_LIMIT_MS       1000 //may not need later
 #define ADDRESS           10   //may not need later
-#define DIO0_INTERRUPT    14
+#define DIO0_INTERRUPT    8
 
 // TWS: define CTLbyte bits
 #define CTL_SENDACK   0x80     //may not need later
@@ -135,7 +135,6 @@
 
 //public
 static volatile uint8_t _mode;
-char payload[] = "123 ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
 void setup() {
   //setup serial
@@ -148,8 +147,8 @@ void setup() {
   //setup spi
   SPI.begin();
 
-  //setup registers for transmitting
-  
+  //delay 5 seconds to start
+  delay(5000);
 
 }
 
