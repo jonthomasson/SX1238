@@ -135,6 +135,7 @@
 
 //public
 static volatile uint8_t _mode;
+char payload[] = "123 ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
 void setup() {
   //setup serial
@@ -193,56 +194,65 @@ void loop(){
 
 void setMode(uint8_t newMode)
 {
-  if (newMode == _mode)
+  
+  
+  if (newMode == _mode) //if it's the same mode, just return.
     return;
 
+  Serial.print("Setting mode to ");
+  
   writeRegister(REG_OPMODE, newMode); 
-//  switch (newMode) {
-//    case RF69_MODE_TX:
-//      writeReg(REG_OPMODE, (readReg(REG_OPMODE) & 0xE3) | RF_OPMODE_TRANSMITTER);
-//      if (_isRFM69HW) setHighPowerRegs(true);
-//      break;
-//    case RF69_MODE_RX:
-//      writeReg(REG_OPMODE, (readReg(REG_OPMODE) & 0xE3) | RF_OPMODE_RECEIVER);
-//      if (_isRFM69HW) setHighPowerRegs(false);
-//      break;
-//    case RF69_MODE_SYNTH:
-//      writeReg(REG_OPMODE, (readReg(REG_OPMODE) & 0xE3) | RF_OPMODE_SYNTHESIZER);
-//      break;
-//    case RF69_MODE_STANDBY:
-//      writeReg(REG_OPMODE, (readReg(REG_OPMODE) & 0xE3) | RF_OPMODE_STANDBY);
-//      break;
-//    case RF69_MODE_SLEEP:
-//      writeReg(REG_OPMODE, (readReg(REG_OPMODE) & 0xE3) | RF_OPMODE_SLEEP);
-//      break;
-//    default:
-//      return;
+  while ((readRegister(REG_IRQFLAGS1) & RF_IRQFLAGS1_MODEREADY) == 0x00); // wait for ModeReady
+  
+  switch (newMode) {
+    case SX1238_MODE_TX:
+      Serial.println("Transmit");
+      digitalWrite(RX_EN, LOW); //disable rx
+      digitalWrite(MODE, LOW);
+      digitalWrite(TX_EN, HIGH); //enable power amp transmitter
+      break;
+    case SX1238_MODE_RX:
+      Serial.println("Receive");
+      digitalWrite(RX_EN, HIGH); //enable rx
+      digitalWrite(MODE, LOW); //low gain mode for now
+      digitalWrite(TX_EN, LOW); //disable power amp transmitter
+      break;
+    case SX1238_MODE_SLEEP:
+      Serial.println("Sleep");
+      digitalWrite(RX_EN, LOW); //disable rx
+      digitalWrite(MODE, LOW); //low gain mode for now
+      digitalWrite(TX_EN, LOW); //disable power amp transmitter
+      break;
+    case SX1238_MODE_STANDBY:
+      Serial.println("Standby");
+      digitalWrite(RX_EN, LOW); //disable rx
+      digitalWrite(MODE, LOW); //low gain mode for now
+      digitalWrite(TX_EN, LOW); //disable power amp transmitter
+      break;
+    default:
+      return;
   }
+}
 
 //transmit a packet of data
 void transmitSomething(){
-  Serial.println("setting REG_OPMODE to tx mode 3");
+ 
   setMode(SX1238_MODE_TX); //set mode to transmit
-  Serial.print("REG_OPMODE = ");
-  Serial.println(readRegister(REG_OPMODE));
-
-  digitalWrite(RX_EN, LOW); //disable rx
-  digitalWrite(MODE, LOW);
-  digitalWrite(TX_EN, HIGH); //enable power amp transmitter
 
   writeRegister(REG_PACONFIG, 1); //output power to 1
 
   writeRegister(REG_PACKETCONFIG1, 128); //turn off crc
 
   //transmit packets
-  
+  Serial.println("Sending Packet");
+  sendFrame(2, "HELLO WORLD", 11, false, false);
   
 }
 
 void sendFrame(uint8_t toAddress, const void* buffer, uint8_t bufferSize, bool requestACK, bool sendACK)
 {
   setMode(SX1238_MODE_STANDBY); // turn off receiver to prevent reception while filling fifo
-  while ((readRegister(REG_IRQFLAGS1) & RF_IRQFLAGS1_MODEREADY) == 0x00); // wait for ModeReady
+  //while ((readRegister(REG_IRQFLAGS1) & RF_IRQFLAGS1_MODEREADY) == 0x00); // wait for ModeReady
   writeRegister(REG_DIOMAPPING1, RF_DIOMAPPING1_DIO0_00); // DIO0 is "Packet Sent"
   if (bufferSize > MAX_DATA_LEN) bufferSize = MAX_DATA_LEN;
 
@@ -269,7 +279,8 @@ void sendFrame(uint8_t toAddress, const void* buffer, uint8_t bufferSize, bool r
   setMode(SX1238_MODE_TX);
   uint32_t txStart = millis();
   while (digitalRead(DIO0_INTERRUPT) == 0 && millis() - txStart < TX_LIMIT_MS); // wait for DIO0 to turn HIGH signalling transmission finish
-  
+
+  Serial.println("Packet sent!");
   setMode(SX1238_MODE_STANDBY);
 }
 
