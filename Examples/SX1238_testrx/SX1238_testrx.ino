@@ -296,56 +296,17 @@ void receiveSomething(){
   RSSI = readRSSI();
 }
 
-// internal function
-void  receiveBegin() {
-  DATALEN = 0;
-  SENDERID = 0;
-  TARGETID = 0;
-  PAYLOADLEN = 0;
-  ACK_REQUESTED = 0;
-  ACK_RECEIVED = 0;
-
-  RSSI = 0;
-  if (readRegister(REG_IRQFLAGS2) & RF_IRQFLAGS2_PAYLOADREADY)
-    writeRegister(REG_PACKETCONFIG2, (readRegister(REG_PACKETCONFIG2) & 0xFB) | RF_PACKET2_RXRESTART); // avoid RX deadlocks
-  writeRegister(REG_DIOMAPPING1, RF_DIOMAPPING1_DIO0_01); // set DIO0 to "PAYLOADREADY" in receive mode
-  setMode(SX1238_MODE_RX);
+// get the received signal strength indicator (RSSI)
+int16_t readRSSI(bool forceTrigger) {
+  int16_t rssi = 0;
+  if (forceTrigger)
+  {
+    // RSSI trigger not needed if DAGC is in continuous mode
+    writeReg(REG_RSSICONFIG, RF_RSSI_START);
+    while ((readReg(REG_RSSICONFIG) & RF_RSSI_DONE) == 0x00); // wait for RSSI_Ready
+  }
+  rssi = -readReg(REG_RSSIVALUE);
+  rssi >>= 1;
+  return rssi;
 }
-
-void sendFrame(uint8_t toAddress, const void* buffer, uint8_t bufferSize, bool requestACK, bool sendACK)
-{
-  setMode(SX1238_MODE_STANDBY); // turn off receiver to prevent reception while filling fifo
-  //while ((readRegister(REG_IRQFLAGS1) & RF_IRQFLAGS1_MODEREADY) == 0x00); // wait for ModeReady
-  writeRegister(REG_DIOMAPPING1, RF_DIOMAPPING1_DIO0_00); // DIO0 is "Packet Sent"
-  if (bufferSize > MAX_DATA_LEN) bufferSize = MAX_DATA_LEN;
-
-  // control byte. Note: we may not need this part.
-  uint8_t CTLbyte = 0x00;
-  if (sendACK)
-    CTLbyte = CTL_SENDACK;
-  else if (requestACK)
-    CTLbyte = CTL_REQACK;
-
-  // write to FIFO
-  select();
-  SPI.transfer(REG_FIFO | 0x80);
-  SPI.transfer(bufferSize + 3);
-  SPI.transfer(toAddress);
-  SPI.transfer(ADDRESS);
-  SPI.transfer(CTLbyte);
-
-  for (uint8_t i = 0; i < bufferSize; i++)
-    SPI.transfer(((uint8_t*) buffer)[i]);
-  unselect();
-
-  // no need to wait for transmit mode to be ready since its handled by the radio
-  setMode(SX1238_MODE_TX);
-  uint32_t txStart = millis();
-  while (digitalRead(DIO0_INTERRUPT) == 0 && millis() - txStart < TX_LIMIT_MS); // wait for DIO0 to turn HIGH signalling transmission finish
-
-  Serial.println("Packet sent!");
-  setMode(SX1238_MODE_STANDBY);
-}
-
-
 
