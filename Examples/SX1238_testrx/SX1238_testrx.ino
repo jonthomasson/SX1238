@@ -297,15 +297,10 @@ void receiveSomething(){
 }
 
 // get the received signal strength indicator (RSSI)
-int16_t readRSSI(bool forceTrigger) {
+int16_t readRSSI() {
   int16_t rssi = 0;
-  if (forceTrigger)
-  {
-    // RSSI trigger not needed if DAGC is in continuous mode
-    writeReg(REG_RSSICONFIG, RF_RSSI_START);
-    while ((readReg(REG_RSSICONFIG) & RF_RSSI_DONE) == 0x00); // wait for RSSI_Ready
-  }
-  rssi = -readReg(REG_RSSIVALUE);
+  
+  rssi = -readRegister(REG_RSSIVALUE);
   rssi >>= 1;
   return rssi;
 }
