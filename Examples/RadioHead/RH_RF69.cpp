@@ -443,9 +443,13 @@ void RH_RF69::setModemRegisters(const ModemConfig* config)
 // Returns true if its a valid choice
 bool RH_RF69::setModemConfig(ModemConfigChoice index)
 {
-    spiWrite(RH_RF69_REG_37_PACKETCONFIG1, ); //packet variable, whitening, crc_on, addressfilter_off
-    spiWrite(RH_RF69_REG_3D_PACKETCONFIG2, ); //packet mode
-    spiWrite(RH_RF69_REG_01_OPMODE, );        //mode fsk, gaussian bt 1.0
+    spiWrite(RH_RF69_REG_37_PACKETCONFIG1, 208); //packet variable, whitening, crc_on, addressfilter_off
+    spiWrite(RH_RF69_REG_3D_PACKETCONFIG2, 64); //packet mode
+
+    //need to append opmode mode
+    uint8_t opmode = spiRead(RH_RF69_REG_01_OPMODE);
+
+    spiWrite(RH_RF69_REG_01_OPMODE, opmode | 0x08);        //fsk, gaussian bt 1.0
     //setup bit rates...
     
     /* if (index > (signed int)(sizeof(MODEM_CONFIG_TABLE) / sizeof(ModemConfig)))
@@ -455,7 +459,7 @@ bool RH_RF69::setModemConfig(ModemConfigChoice index)
     memcpy_P(&cfg, &MODEM_CONFIG_TABLE[index], sizeof(RH_RF69::ModemConfig));
     setModemRegisters(&cfg);
 
-    return tr */ue;
+    return tr ue;*/
 }
 
 void RH_RF69::setPreambleLength(uint16_t bytes)
