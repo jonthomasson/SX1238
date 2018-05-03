@@ -67,10 +67,10 @@
 #define RH_RF69_REG_00_FIFO                                 0x00
 #define RH_RF69_REG_01_OPMODE                               0x01
 #define RH_RF69_REG_02_DATAMODUL                            0x02
-#define RH_RF69_REG_03_BITRATEMSB                           0x03
-#define RH_RF69_REG_04_BITRATELSB                           0x04
-#define RH_RF69_REG_05_FDEVMSB                              0x05
-#define RH_RF69_REG_06_FDEVLSB                              0x06
+#define RH_RF69_REG_03_BITRATEMSB                           0x02
+#define RH_RF69_REG_04_BITRATELSB                           0x03
+#define RH_RF69_REG_05_FDEVMSB                              0x04
+#define RH_RF69_REG_06_FDEVLSB                              0x05
 #define RH_RF69_REG_07_FRFMSB                               0x07
 #define RH_RF69_REG_08_FRFMID                               0x08
 #define RH_RF69_REG_09_FRFLSB                               0x09

@@ -431,12 +431,12 @@ void RH_RF69::setTxPower(int8_t power, bool ishighpowermodule)
 // Sets registers from a canned modem configuration structure
 void RH_RF69::setModemRegisters(const ModemConfig* config)
 {
-    //{ CONFIG_GFSK, 0x00, 0x80, 0x10, 0x00, 0xe0, 0xe0, CONFIG_WHITE}, // GFSK_Rb250Fd250
+    { CONFIG_GFSK, 0x00, 0x80, 0x10, 0x00, 0xe0, 0xe0, CONFIG_WHITE}, // GFSK_Rb250Fd250
 
 
-    spiBurstWrite(RH_RF69_REG_02_DATAMODUL,     &config->reg_02, 5);
-    spiBurstWrite(RH_RF69_REG_19_RXBW,          &config->reg_19, 2);
-    spiWrite(RH_RF69_REG_37_PACKETCONFIG1,       config->reg_37);
+    spiBurstWrite(RH_RF69_REG_02_DATAMODUL,     &config->reg_02, 5); //CONFIG_GFSK, 0x00, 0x80, 0x10, 0x00
+    spiBurstWrite(RH_RF69_REG_19_RXBW,          &config->reg_19, 2); //0xe0, 0xe0
+    spiWrite(RH_RF69_REG_37_PACKETCONFIG1,       config->reg_37); //CONFIG_WHITE
 }
 
 // Set one of the canned FSK Modem configs
@@ -451,6 +451,14 @@ bool RH_RF69::setModemConfig(ModemConfigChoice index)
 
     spiWrite(RH_RF69_REG_01_OPMODE, opmode | 0x08);        //fsk, gaussian bt 1.0
     //setup bit rates...
+    spiWrite(RH_RF69_REG_03_BITRATEMSB, 0); 
+    spiWrite(RH_RF69_REG_04_BITRATELSB, 128); 
+
+    spiWrite(RH_RF69_REG_05_FDEVMSB, 16); 
+    spiWrite(RH_RF69_REG_06_FDEVLSB, 0); 
+    
+
+
     
     /* if (index > (signed int)(sizeof(MODEM_CONFIG_TABLE) / sizeof(ModemConfig)))
         return false;
