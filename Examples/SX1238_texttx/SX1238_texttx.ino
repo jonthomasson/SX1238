@@ -80,14 +80,16 @@
 #define REG_BITRATEFRAC   0x70
 
 #define SERIAL_BAUD       115200
-#define SS                10
+#define SS                4
 #define TX_EN             7
 #define RX_EN             9
 #define MODE              6
 #define MAX_DATA_LEN      61   //may not need later
 #define TX_LIMIT_MS       1000 //may not need later
 #define ADDRESS           10   //may not need later
-#define DIO0_INTERRUPT    8
+#define DIO0_INTERRUPT    3
+#define NODE_TO_ADDR      2    //node receiving data
+#define RESET         2 
 
 // TWS: define CTLbyte bits
 #define CTL_SENDACK   0x80     //may not need later
@@ -102,6 +104,16 @@
 #define RF_IRQFLAGS1_TIMEOUT              0x04
 #define RF_IRQFLAGS1_PREAMBLEDETECT       0x02
 #define RF_IRQFLAGS1_SYNCADDRESSMATCH     0x01
+
+// RegIrqFlags2
+#define RF_IRQFLAGS2_FIFOFULL             0x80
+#define RF_IRQFLAGS2_FIFOEMPTY            0x40
+#define RF_IRQFLAGS2_FIFOLEVEL            0x20
+#define RF_IRQFLAGS2_FIFOOVERRUN          0x10
+#define RF_IRQFLAGS2_PACKETSENT           0x08
+#define RF_IRQFLAGS2_PAYLOADREADY         0x04
+#define RF_IRQFLAGS2_CRCOK                0x02
+#define RF_IRQFLAGS2_LOWBAT               0x01  // not present on RFM69/SX1231
 
 // RegDioMapping1
 #define RF_DIOMAPPING1_DIO0_00            0x00  // Default
@@ -140,12 +152,60 @@ void setup() {
   //setup serial
   Serial.begin(SERIAL_BAUD);
 
+  pinMode(TX_EN, OUTPUT);
+  pinMode(RX_EN, OUTPUT);
+  pinMode(MODE, OUTPUT);
+
+  // Determine the interrupt number that corresponds to the interruptPin
+  int interruptNumber = digitalPinToInterrupt(DIO0_INTERRUPT);
+
+  attachInterrupt(interruptNumber, handleInterrupt, RISING);
+
+  pinMode(RESET, OUTPUT);
+  digitalWrite(RESET, LOW);
+
+
+  // manual reset
+  digitalWrite(RESET, HIGH);
+  delay(10);
+  digitalWrite(RESET, LOW);
+  delay(10);
+
   //setup cs pin
   digitalWrite(SS, HIGH);
   pinMode(SS, OUTPUT);
 
   //setup spi
   SPI.begin();
+
+  writeRegister(REG_PACONFIG, 0x0e); //output power to default
+  
+  writeRegister(REG_FIFOTHRESH, 0x8f); //fifo start condition not empty
+
+  writeRegister(REG_PACKETCONFIG1, 0x80); //turn off crc
+  writeRegister(REG_PACKETCONFIG2, 0x40); //packet mode
+
+  writeRegister(REG_PREAMBLEMSB, 0x00); //preamble length
+  writeRegister(REG_PREAMBLELSB, 0x03);
+
+  writeRegister(REG_FRFMSB, 0xe4); //frequency 915MHz
+  writeRegister(REG_FRFMID, 0xc0);
+  writeRegister(REG_FRFLSB, 0x00);
+
+  writeRegister(REG_SYNCCONFIG, 0x91); //auto restart, sync on, fill auto, sync size 2 bytes
+  writeRegister(REG_SYNCVALUE1, 0x5A);
+  writeRegister(REG_SYNCVALUE2, 0x5A);
+
+//  writeRegister(REG_BITRATEMSB, 0); //bit rates etc...
+//  writeRegister(REG_BITRATELSB, 0x80); 
+
+  writeRegister(REG_FDEVMSB, 0x10); //frequency deviation
+  writeRegister(REG_FDEVLSB, 0); 
+
+  writeRegister(REG_RXBW, 0xe0); 
+  writeRegister(REG_AFCBW, 0xe0); 
+
+  setMode(SX1238_MODE_STANDBY);
 
   //delay 5 seconds to start
   delay(5000);
@@ -200,8 +260,11 @@ void setMode(uint8_t newMode)
 
   Serial.print("Setting mode to ");
   
-  writeRegister(REG_OPMODE, newMode); 
+  writeRegister(REG_OPMODE, newMode | 0x08); //adding gausian filter too...
+  
+  
   while ((readRegister(REG_IRQFLAGS1) & RF_IRQFLAGS1_MODEREADY) == 0x00); // wait for ModeReady
+  _mode = newMode;
   
   switch (newMode) {
     case SX1238_MODE_TX:
@@ -236,15 +299,13 @@ void setMode(uint8_t newMode)
 //transmit a packet of data
 void transmitSomething(){
  
-  setMode(SX1238_MODE_TX); //set mode to transmit
+  //setMode(SX1238_MODE_TX); //set mode to transmit
 
-  writeRegister(REG_PACONFIG, 1); //output power to 1
-
-  writeRegister(REG_PACKETCONFIG1, 128); //turn off crc
+  
 
   //transmit packets
   Serial.println("Sending Packet");
-  sendFrame(2, "HELLO WORLD", 11, false, false);
+  sendFrame(NODE_TO_ADDR, "HELLO WORLD", 11, false, false);
   
 }
 
@@ -276,11 +337,36 @@ void sendFrame(uint8_t toAddress, const void* buffer, uint8_t bufferSize, bool r
 
   // no need to wait for transmit mode to be ready since its handled by the radio
   setMode(SX1238_MODE_TX);
-  uint32_t txStart = millis();
-  while (digitalRead(DIO0_INTERRUPT) == 0 && millis() - txStart < TX_LIMIT_MS); // wait for DIO0 to turn HIGH signalling transmission finish
+//  uint32_t txStart = millis();
+//  while (digitalRead(DIO0_INTERRUPT) == 0 && millis() - txStart < TX_LIMIT_MS); // wait for DIO0 to turn HIGH signalling transmission finish
+//
+//  Serial.println("Packet sent!");
+//  setMode(SX1238_MODE_STANDBY);
+}
 
-  Serial.println("Packet sent!");
-  setMode(SX1238_MODE_STANDBY);
+void handleInterrupt()
+{
+    // Get the interrupt cause
+    uint8_t irqflags2 = readRegister(REG_IRQFLAGS2);
+    if (_mode == SX1238_MODE_TX && (irqflags2 & RF_IRQFLAGS2_PACKETSENT))
+    {
+      // A transmitter message has been fully sent
+      Serial.println("Packet sent!");
+      setMode(SX1238_MODE_STANDBY);
+    }
+    // Must look for PAYLOADREADY, not CRCOK, since only PAYLOADREADY occurs _after_ AES decryption
+    // has been done
+//    if (_mode == RHModeRx && (irqflags2 & RH_RF69_IRQFLAGS2_PAYLOADREADY))
+//    {
+//  // A complete message has been received with good CRC
+//  _lastRssi = -((int8_t)(spiRead(RH_RF69_REG_24_RSSIVALUE) >> 1));
+//  _lastPreambleTime = millis();
+//
+//  setModeIdle();
+//  // Save it in our buffer
+//  readFifo();
+//  //Serial.println("PAYLOADREADY");
+//    }
 }
 
 
