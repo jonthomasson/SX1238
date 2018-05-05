@@ -178,7 +178,7 @@ void setup() {
   //setup spi
   SPI.begin();
 
-  writeRegister(REG_PACONFIG, 0x0e); //output power to default
+  writeRegister(REG_PACONFIG, 0x01); //output power to default
   
   writeRegister(REG_FIFOTHRESH, 0x8f); //fifo start condition not empty
 
@@ -196,14 +196,15 @@ void setup() {
   writeRegister(REG_SYNCVALUE1, 0x5A);
   writeRegister(REG_SYNCVALUE2, 0x5A);
 
-//  writeRegister(REG_BITRATEMSB, 0); //bit rates etc...
-//  writeRegister(REG_BITRATELSB, 0x80); 
+  writeRegister(REG_BITRATEMSB, 0x1a); //bit rates etc...
+  writeRegister(REG_BITRATELSB, 0x0b); //300kbps
 
-  writeRegister(REG_FDEVMSB, 0x10); //frequency deviation
-  writeRegister(REG_FDEVLSB, 0); 
+  //for 300kbps br, fdev can't be more than 100kHz
+  writeRegister(REG_FDEVMSB, 0x00); //frequency deviation (deviation in Hz = fdev * 61)
+  writeRegister(REG_FDEVLSB, 0x52); //see datasheet for max fdev limits (https://www.semtech.com/uploads/documents/sx1238.pdf page 22)
 
-  writeRegister(REG_RXBW, 0xe0); 
-  writeRegister(REG_AFCBW, 0xe0); 
+  writeRegister(REG_RXBW, 0x05); 
+  //writeRegister(REG_AFCBW, 0xe0); 
 
   setMode(SX1238_MODE_STANDBY);
 
@@ -305,7 +306,7 @@ void transmitSomething(){
 
   //transmit packets
   Serial.println("Sending Packet");
-  sendFrame(NODE_TO_ADDR, "HELLO WORLD", 11, false, false);
+  sendFrame(NODE_TO_ADDR, "aaaaa aaaaa", 11, false, false);
   
 }
 

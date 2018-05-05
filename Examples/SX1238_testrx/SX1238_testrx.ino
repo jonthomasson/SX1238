@@ -80,14 +80,15 @@
 #define REG_BITRATEFRAC   0x70
 
 #define SERIAL_BAUD       115200
-#define SS                10
+#define SS                4
 #define TX_EN             7
 #define RX_EN             9
 #define MODE              6
 #define MAX_DATA_LEN      61   //may not need later
 #define TX_LIMIT_MS       1000 //may not need later
 #define ADDRESS           2   //may not need later
-#define DIO0_INTERRUPT    8
+#define DIO0_INTERRUPT    3
+#define RESET             2 
 
 
 
@@ -161,6 +162,25 @@ void setup() {
   //setup serial
   Serial.begin(SERIAL_BAUD);
 
+  pinMode(TX_EN, OUTPUT);
+  pinMode(RX_EN, OUTPUT);
+  pinMode(MODE, OUTPUT);
+
+  // Determine the interrupt number that corresponds to the interruptPin
+  int interruptNumber = digitalPinToInterrupt(DIO0_INTERRUPT);
+
+  attachInterrupt(interruptNumber, handleInterrupt, RISING);
+
+  pinMode(RESET, OUTPUT);
+  digitalWrite(RESET, LOW);
+
+
+  // manual reset
+  digitalWrite(RESET, HIGH);
+  delay(10);
+  digitalWrite(RESET, LOW);
+  delay(10);
+
   //setup cs pin
   digitalWrite(SS, HIGH);
   pinMode(SS, OUTPUT);
@@ -168,8 +188,46 @@ void setup() {
   //setup spi
   SPI.begin();
 
+    writeRegister(REG_PACONFIG, 0x00); //output power to default
+  
+  writeRegister(REG_FIFOTHRESH, 0x8f); //fifo start condition not empty
+
+  writeRegister(REG_PACKETCONFIG1, 0x80); //turn off crc
+  writeRegister(REG_PACKETCONFIG2, 0x40); //packet mode
+
+  writeRegister(REG_PREAMBLEMSB, 0x00); //preamble length
+  writeRegister(REG_PREAMBLELSB, 0x03);
+
+  writeRegister(REG_FRFMSB, 0xe4); //frequency 915MHz
+  writeRegister(REG_FRFMID, 0xc0);
+  writeRegister(REG_FRFLSB, 0x00);
+
+  writeRegister(REG_SYNCCONFIG, 0x91); //auto restart, sync on, fill auto, sync size 2 bytes
+  writeRegister(REG_SYNCVALUE1, 0x5A);
+  writeRegister(REG_SYNCVALUE2, 0x5A);
+
+  writeRegister(REG_BITRATEMSB, 0x1a); //bit rates etc...
+  writeRegister(REG_BITRATELSB, 0x0b); //300kbps
+
+  //for 300kbps br, fdev can't be more than 100kHz
+  writeRegister(REG_FDEVMSB, 0x00); //frequency deviation (deviation in Hz = fdev * 61)
+  writeRegister(REG_FDEVLSB, 0x52); //see datasheet for max fdev limits (https://www.semtech.com/uploads/documents/sx1238.pdf page 22)
+
+  writeRegister(REG_RXBW, 0x05); 
+  //writeRegister(REG_AFCBW, 0xe0); 
+
+
+  //setup our node address
+  Serial.print("Setting Node Address to: ");
+  Serial.println(ADDRESS);
+  writeRegister(REG_NODEADRS, ADDRESS);
+
+  
+  setMode(SX1238_MODE_STANDBY);
+
   setMode(SX1238_MODE_RX); //start out in rx mode
 
+  writeRegister(REG_DIOMAPPING1, RF_DIOMAPPING1_DIO0_00); // DIO0 is "Payload Ready"
 }
 
 //reads the register value of supplied address
@@ -207,7 +265,7 @@ void unselect() {
 
 void loop(){
   
-  receiveSomething();  
+  //receiveSomething();  
 }
 
 void setMode(uint8_t newMode)
@@ -219,8 +277,11 @@ void setMode(uint8_t newMode)
 
   Serial.print("Setting mode to ");
   
-  writeRegister(REG_OPMODE, newMode); 
+  writeRegister(REG_OPMODE, newMode | 0x08); //adding gausian filter too...
+  
+  
   while ((readRegister(REG_IRQFLAGS1) & RF_IRQFLAGS1_MODEREADY) == 0x00); // wait for ModeReady
+  _mode = newMode;
   
   switch (newMode) {
     case SX1238_MODE_TX:
@@ -232,7 +293,7 @@ void setMode(uint8_t newMode)
     case SX1238_MODE_RX:
       Serial.println("Receive");
       digitalWrite(RX_EN, HIGH); //enable rx
-      digitalWrite(MODE, LOW); //low gain mode for now
+      digitalWrite(MODE, HIGH); //low gain mode for now
       digitalWrite(TX_EN, LOW); //disable power amp transmitter
       break;
     case SX1238_MODE_SLEEP:
@@ -255,17 +316,48 @@ void setMode(uint8_t newMode)
 //receive a packet of data
 void receiveSomething(){
  
-//  writeRegister(REG_PACKETCONFIG1, 128); //turn off crc
+  setMode(SX1238_MODE_RX); //start out in rx mode
 
-  if (_mode == SX1238_MODE_RX && (readRegister(REG_IRQFLAGS2) & RF_IRQFLAGS2_PAYLOADREADY))
-  {
-    //RSSI = readRSSI();
-    setMode(SX1238_MODE_STANDBY);
+  writeRegister(REG_DIOMAPPING1, RF_DIOMAPPING1_DIO0_00); // DIO0 is "Payload Ready"
+}
+
+void handleInterrupt()
+{
+  Serial.println("got to interrupt!");
+    // Get the interrupt cause
+    uint8_t irqflags2 = readRegister(REG_IRQFLAGS2);
+    if (_mode == SX1238_MODE_TX && (irqflags2 & RF_IRQFLAGS2_PACKETSENT))
+    {
+      // A transmitter message has been fully sent
+      Serial.println("Packet sent!");
+      setMode(SX1238_MODE_STANDBY);
+    }
+    // Must look for PAYLOADREADY, not CRCOK, since only PAYLOADREADY occurs _after_ AES decryption
+    // has been done
+    if (_mode == SX1238_MODE_RX && (irqflags2 & RF_IRQFLAGS2_PAYLOADREADY))
+    {
+      // A complete message has been received with good CRC
+//      _lastRssi = -((int8_t)(spiRead(RH_RF69_REG_24_RSSIVALUE) >> 1));
+//      _lastPreambleTime = millis();
+      Serial.println("Packet received!");
+      setMode(SX1238_MODE_STANDBY);
+      // Save it in our buffer
+      readFifo();
+      //Serial.println("PAYLOADREADY");
+    }
+}
+
+void readFifo(){
     select();
     SPI.transfer(REG_FIFO & 0x7F);
     PAYLOADLEN = SPI.transfer(0);
+    Serial.print("PAYLOADLEN: ");
+    Serial.println(PAYLOADLEN);
+    
     PAYLOADLEN = PAYLOADLEN > 66 ? 66 : PAYLOADLEN; // precaution
     TARGETID = SPI.transfer(0);
+    Serial.print("TARGETID: ");
+    Serial.println(TARGETID);
 //    if(!(_promiscuousMode || TARGETID == _address || TARGETID == RF69_BROADCAST_ADDR) // match this node's address, or broadcast address or anything in promiscuous mode
 //       || PAYLOADLEN < 3) // address situation could receive packets that are malformed and don't fit this libraries extra fields
 //    {
@@ -278,6 +370,9 @@ void receiveSomething(){
 
     DATALEN = PAYLOADLEN - 3;
     SENDERID = SPI.transfer(0);
+    Serial.print("SENDERID: ");
+    Serial.println(SENDERID);
+    
     uint8_t CTLbyte = SPI.transfer(0);
 
 //    ACK_RECEIVED = CTLbyte & RFM69_CTL_SENDACK; // extract ACK-received flag
@@ -288,12 +383,11 @@ void receiveSomething(){
     for (uint8_t i = 0; i < DATALEN; i++)
     {
       DATA[i] = SPI.transfer(0);
+      Serial.println(DATA[i]);
     }
     if (DATALEN < MAX_DATA_LEN) DATA[DATALEN] = 0; // add null at end of string
     unselect();
     setMode(SX1238_MODE_RX);
-  }
-  RSSI = readRSSI();
 }
 
 // get the received signal strength indicator (RSSI)
