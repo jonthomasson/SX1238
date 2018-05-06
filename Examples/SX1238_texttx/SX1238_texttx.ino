@@ -146,12 +146,14 @@
 #define SX1238_MODE_RX            5 // Frequency synthesizer and receiver
 
 //public
-static volatile uint8_t _mode;
+static volatile uint8_t _mode; //holds current mode of transceiver
+int16_t packetnum = 0;  // packet counter, we increment per xmission
 
 void setup() {
   //setup serial
   Serial.begin(SERIAL_BAUD);
 
+  //setup control pins
   pinMode(TX_EN, OUTPUT);
   pinMode(RX_EN, OUTPUT);
   pinMode(MODE, OUTPUT);
@@ -197,14 +199,12 @@ void setup() {
   writeRegister(REG_SYNCVALUE2, 0x5A);
 
   writeRegister(REG_BITRATEMSB, 0x1a); //bit rates etc...
-  writeRegister(REG_BITRATELSB, 0x0b); //300kbps
+  writeRegister(REG_BITRATELSB, 0x0b); 
 
-  //for 300kbps br, fdev can't be more than 100kHz
   writeRegister(REG_FDEVMSB, 0x00); //frequency deviation (deviation in Hz = fdev * 61)
   writeRegister(REG_FDEVLSB, 0x52); //see datasheet for max fdev limits (https://www.semtech.com/uploads/documents/sx1238.pdf page 22)
 
-  writeRegister(REG_RXBW, 0x05); 
-  //writeRegister(REG_AFCBW, 0xe0); 
+  writeRegister(REG_RXBW, 0x05);  
 
   setMode(SX1238_MODE_STANDBY);
 
@@ -300,20 +300,19 @@ void setMode(uint8_t newMode)
 //transmit a packet of data
 void transmitSomething(){
  
-  //setMode(SX1238_MODE_TX); //set mode to transmit
-
-  
+  char radiopacket[20] = "Hello World #";
+  itoa(packetnum++, radiopacket+13, 10);
 
   //transmit packets
   Serial.println("Sending Packet");
-  sendFrame(NODE_TO_ADDR, "aaaaa aaaaa", 11, false, false);
-  
+  sendFrame(NODE_TO_ADDR, radiopacket, strlen(radiopacket), false, false);
+ 
 }
 
 void sendFrame(uint8_t toAddress, const void* buffer, uint8_t bufferSize, bool requestACK, bool sendACK)
 {
   setMode(SX1238_MODE_STANDBY); // turn off receiver to prevent reception while filling fifo
-  //while ((readRegister(REG_IRQFLAGS1) & RF_IRQFLAGS1_MODEREADY) == 0x00); // wait for ModeReady
+
   writeRegister(REG_DIOMAPPING1, RF_DIOMAPPING1_DIO0_00); // DIO0 is "Packet Sent"
   if (bufferSize > MAX_DATA_LEN) bufferSize = MAX_DATA_LEN;
 
@@ -338,11 +337,6 @@ void sendFrame(uint8_t toAddress, const void* buffer, uint8_t bufferSize, bool r
 
   // no need to wait for transmit mode to be ready since its handled by the radio
   setMode(SX1238_MODE_TX);
-//  uint32_t txStart = millis();
-//  while (digitalRead(DIO0_INTERRUPT) == 0 && millis() - txStart < TX_LIMIT_MS); // wait for DIO0 to turn HIGH signalling transmission finish
-//
-//  Serial.println("Packet sent!");
-//  setMode(SX1238_MODE_STANDBY);
 }
 
 void handleInterrupt()
@@ -355,19 +349,6 @@ void handleInterrupt()
       Serial.println("Packet sent!");
       setMode(SX1238_MODE_STANDBY);
     }
-    // Must look for PAYLOADREADY, not CRCOK, since only PAYLOADREADY occurs _after_ AES decryption
-    // has been done
-//    if (_mode == RHModeRx && (irqflags2 & RH_RF69_IRQFLAGS2_PAYLOADREADY))
-//    {
-//  // A complete message has been received with good CRC
-//  _lastRssi = -((int8_t)(spiRead(RH_RF69_REG_24_RSSIVALUE) >> 1));
-//  _lastPreambleTime = millis();
-//
-//  setModeIdle();
-//  // Save it in our buffer
-//  readFifo();
-//  //Serial.println("PAYLOADREADY");
-//    }
 }
 
 

@@ -162,6 +162,7 @@ void setup() {
   //setup serial
   Serial.begin(SERIAL_BAUD);
 
+  //setup control pins
   pinMode(TX_EN, OUTPUT);
   pinMode(RX_EN, OUTPUT);
   pinMode(MODE, OUTPUT);
@@ -188,7 +189,7 @@ void setup() {
   //setup spi
   SPI.begin();
 
-    writeRegister(REG_PACONFIG, 0x00); //output power to default
+  writeRegister(REG_PACONFIG, 0x00); //output power to 0 for receive
   
   writeRegister(REG_FIFOTHRESH, 0x8f); //fifo start condition not empty
 
@@ -207,9 +208,8 @@ void setup() {
   writeRegister(REG_SYNCVALUE2, 0x5A);
 
   writeRegister(REG_BITRATEMSB, 0x1a); //bit rates etc...
-  writeRegister(REG_BITRATELSB, 0x0b); //300kbps
+  writeRegister(REG_BITRATELSB, 0x0b); 
 
-  //for 300kbps br, fdev can't be more than 100kHz
   writeRegister(REG_FDEVMSB, 0x00); //frequency deviation (deviation in Hz = fdev * 61)
   writeRegister(REG_FDEVLSB, 0x52); //see datasheet for max fdev limits (https://www.semtech.com/uploads/documents/sx1238.pdf page 22)
 
@@ -264,21 +264,17 @@ void unselect() {
 }
 
 void loop(){
-  
-  //receiveSomething();  
+  //nothing needed here since all the hard work is done in the interrupt handler...
 }
 
 void setMode(uint8_t newMode)
 {
-  
-  
   if (newMode == _mode) //if it's the same mode, just return.
     return;
 
   Serial.print("Setting mode to ");
   
   writeRegister(REG_OPMODE, newMode | 0x08); //adding gausian filter too...
-  
   
   while ((readRegister(REG_IRQFLAGS1) & RF_IRQFLAGS1_MODEREADY) == 0x00); // wait for ModeReady
   _mode = newMode;
@@ -323,27 +319,18 @@ void receiveSomething(){
 
 void handleInterrupt()
 {
-  Serial.println("got to interrupt!");
     // Get the interrupt cause
     uint8_t irqflags2 = readRegister(REG_IRQFLAGS2);
-    if (_mode == SX1238_MODE_TX && (irqflags2 & RF_IRQFLAGS2_PACKETSENT))
-    {
-      // A transmitter message has been fully sent
-      Serial.println("Packet sent!");
-      setMode(SX1238_MODE_STANDBY);
-    }
-    // Must look for PAYLOADREADY, not CRCOK, since only PAYLOADREADY occurs _after_ AES decryption
-    // has been done
+    
+    // Must look for PAYLOADREADY
     if (_mode == SX1238_MODE_RX && (irqflags2 & RF_IRQFLAGS2_PAYLOADREADY))
     {
-      // A complete message has been received with good CRC
-//      _lastRssi = -((int8_t)(spiRead(RH_RF69_REG_24_RSSIVALUE) >> 1));
-//      _lastPreambleTime = millis();
+      // A complete message has been received.
+
       Serial.println("Packet received!");
       setMode(SX1238_MODE_STANDBY);
       // Save it in our buffer
       readFifo();
-      //Serial.println("PAYLOADREADY");
     }
 }
 
@@ -358,15 +345,6 @@ void readFifo(){
     TARGETID = SPI.transfer(0);
     Serial.print("TARGETID: ");
     Serial.println(TARGETID);
-//    if(!(_promiscuousMode || TARGETID == _address || TARGETID == RF69_BROADCAST_ADDR) // match this node's address, or broadcast address or anything in promiscuous mode
-//       || PAYLOADLEN < 3) // address situation could receive packets that are malformed and don't fit this libraries extra fields
-//    {
-//      PAYLOADLEN = 0;
-//      unselect();
-//      receiveBegin();
-//      //digitalWrite(4, 0);
-//      return;
-//    }
 
     DATALEN = PAYLOADLEN - 3;
     SENDERID = SPI.transfer(0);
@@ -375,18 +353,17 @@ void readFifo(){
     
     uint8_t CTLbyte = SPI.transfer(0);
 
-//    ACK_RECEIVED = CTLbyte & RFM69_CTL_SENDACK; // extract ACK-received flag
-//    ACK_REQUESTED = CTLbyte & RFM69_CTL_REQACK; // extract ACK-requested flag
-//    
-//    interruptHook(CTLbyte);     // TWS: hook to derived class interrupt function
-
+    Serial.print("PAYLOAD: ");
     for (uint8_t i = 0; i < DATALEN; i++)
     {
       DATA[i] = SPI.transfer(0);
-      Serial.println(DATA[i]);
+      Serial.print((char)DATA[i]);
     }
+    Serial.println();
     if (DATALEN < MAX_DATA_LEN) DATA[DATALEN] = 0; // add null at end of string
     unselect();
+    Serial.print("RSSI: ");
+    Serial.println(readRSSI());
     setMode(SX1238_MODE_RX);
 }
 
